@@ -68,3 +68,8 @@ class gestDetModel:
                 handbboxs = np.hstack((bboxs, scores, np.ones(scores.shape) * cls_ind)) if not len(handbboxs) else np.vstack((handbboxs, np.hstack((bboxs, scores, np.ones(scores.shape) * cls_ind))))
 
         return handbboxs
+
+    def serv(self):
+        for i in range(10):
+            print self.detect(np.zeros((1920, 1080, 3))).shape
+
