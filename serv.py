@@ -4,7 +4,6 @@ from gestureModel import gestDetModel
 
 import socket
 import threading
-#from multiprocessing import Process
 from multiprocessing import Pool
 import SocketServer as SS
 import signal
@@ -79,14 +78,6 @@ class RequestHandler(SS.BaseRequestHandler):
 class Server(SS.ThreadingMixIn, SS.TCPServer):
     pass
 
-
-#def modelPrepare(className, params):
-    #caffe.set_mode_gpu()
-    #caffe.set_device(0)
-    #modelClass = getattr(sys.modules[__name__], className)
-    #model = modelClass(*params)
-    #model.serv()
-
 def modelPrepare(params):
     # caffe initialization has to be put here, otherwise encounter:
     #     "syncedmem.cpp: error == cudaSuccess (3 vs. 0)"
@@ -106,17 +97,11 @@ if __name__ == "__main__":
     else:
         print "Failed to start debug... Continuing without debug"
 
-    # use normal Process
-    #p = Process(target=modelPrepare, args=('gestDetModel', ("/home/zerry/Work/Libs/py-faster-rcnn/models/VGG16/faster_rcnn_end2end_handGesdet/test.prototxt", "/home/zerry/Work/Libs/py-faster-rcnn/output/faster_rcnn_end2end_handGesdet/trainval/vgg16_faster_rcnn_handGesdet_aug_fulldata_iter_50000.caffemodel", 0.4, 0.8, ('natural', 'yes', 'no'))))
-    #p.start()
-    #p.join()
-
     # use process pool
     models = [('gestDetModel', ("/home/zerry/Work/Libs/py-faster-rcnn/models/VGG16/faster_rcnn_end2end_handGesdet/test.prototxt", "/home/zerry/Work/Libs/py-faster-rcnn/output/faster_rcnn_end2end_handGesdet/trainval/vgg16_faster_rcnn_handGesdet_aug_fulldata_iter_50000.caffemodel", 0.4, 0.8, ('natural', 'yes', 'no'))),
               ]
     pool = Pool(processes=len(models))
     pool.map(modelPrepare, models)
-
 
     #  HOST, PORT = "", 9999
     #  server = Server((HOST, PORT), RequestHandler)
