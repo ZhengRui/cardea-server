@@ -13,16 +13,19 @@ import cv2
 
 class RequestHandler(SS.BaseRequestHandler):
     def recvMsg(self):
-        headerBytes = self.request.recv(40)
-        assert(len(headerBytes) == 40)
-        header = struct.unpack('<6i2d', headerBytes)
-        #  print header
+        headerBytes = self.request.recv(24)
+        header = struct.unpack('6i', headerBytes)
+        print header
 
         if not header[0]:   # frame prediction message
+            lat, lon = struct.unpack('<2d', self.request.recv(16))
+            #  print lat, lon
+
             size = header[5]
             size_recv = 0
             frm_buffer = ''
 
+            #  cv2.namedWindow("Preview", cv2.CV_WINDOW_AUTOSIZE)
             while size_recv < size:
                 chunk = self.request.recv(size - size_recv)
                 if not chunk:
@@ -31,24 +34,38 @@ class RequestHandler(SS.BaseRequestHandler):
                 else:
                     frm_buffer += chunk
                     size_recv += len(chunk)
-                    print "size, size_recv", size, size_recv
+                    #  print "size, size_recv", size, size_recv
 
-            print "One frame received"
+            #  print "Frame received"
 
             # decode jpeg
             nparr = np.fromstring(frm_buffer, dtype=np.uint8)
             img_np = cv2.imdecode(nparr, cv2.CV_LOAD_IMAGE_COLOR)
 
             # preprocessing frame : flip , orientation
+            if header[2] == 0:
+                img_np = cv2.transpose(img_np)
+                img_np = cv2.flip(img_np, 1-header[1])
+            elif header[2] == 1:
+                img_np = cv2.flip(img_np, -1)
+            elif header[2] == 2:
+                img_np = cv2.transpose(img_np)
+                img_np = cv2.flip(img_np, header[1])
+            else:
+                pass
 
+            print "Frame shape: ", img_np.shape
 
+            #  cv2.imshow("Preview", img_np)
+            #  cv2.waitKey(0)
 
         else:   # profile message
             pass
 
 
+
     def handle(self):
-        print "one request issued"
+        print "one tcp request issued"
         msg = self.recvMsg()
 
 class Server(SS.ThreadingMixIn, SS.TCPServer):
