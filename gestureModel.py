@@ -1,5 +1,6 @@
 import _init_paths
 from fast_rcnn.test import *
+import time
 
 class gestDetModel:
     def __init__(self, proto, mdl, thresh_nms, thresh_conf, classes):
@@ -63,13 +64,19 @@ class gestDetModel:
 
             if len(inds):
                 bboxs = dets[inds, :4] * im_scale
-                scores = dets[inds, -1]
+                confs = dets[inds, -1][:, np.newaxis]
                 bboxs = bboxs.astype(int)
-                handbboxs = np.hstack((bboxs, scores, np.ones(scores.shape) * cls_ind)) if not len(handbboxs) else np.vstack((handbboxs, np.hstack((bboxs, scores, np.ones(scores.shape) * cls_ind))))
+                handbboxs = np.hstack((bboxs, confs, np.ones(confs.shape) * cls_ind)) if not len(handbboxs) else np.vstack((handbboxs, np.hstack((bboxs, confs, np.ones(confs.shape) * cls_ind))))
 
         return handbboxs
 
-    def serv(self):
-        for i in range(10):
-            print self.detect(np.zeros((1920, 1080, 3))).shape
+    def serv(self, inp_q, res_q):
+        while True:
+            frm_buffer = inp_q.get()
+            nparr = np.fromstring(frm_buffer, dtype=np.uint8)
+            img_np = cv2.imdecode(nparr, cv2.CV_LOAD_IMAGE_COLOR)
+            res_q.put(self.detect(img_np))
+            inp_q.task_done()
+
+
 
