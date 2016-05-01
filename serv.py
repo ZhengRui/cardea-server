@@ -42,7 +42,14 @@ class RequestHandler(SS.BaseRequestHandler):
 
             print "Frame received"
 
-            frm_raw_q.put((header[1], header[2], frm_buffer))
+            # frm_raw_q.put((header[1], header[2], frm_buffer))
+
+            # leave the efforts of rotation and flip preprocessing to the socket client,
+            # no need of worker_preprocess_p and frm_raw_q, frm_buffer received here is
+            # already preprocessed by the client, directly put frm_buffer to hand_inp_q
+            # and face_inp_q
+
+            hand_inp_q.put(frm_buffer)
 
             print hand_res_q.qsize()
 
@@ -71,31 +78,31 @@ def modelPrepare(model_class_name, params, tsk_queues):
     model.serv(*tsk_queues)
 
 
-def preProcess(raw_q, inp_qs):
-    while True:
-        front_or_back, orient_case, frm_buffer = raw_q.get()
-        # decode jpeg
-        nparr = np.fromstring(frm_buffer, dtype=np.uint8)
-        img_np = cv2.imdecode(nparr, cv2.CV_LOAD_IMAGE_COLOR)
+#def preProcess(raw_q, inp_qs):
+    #while True:
+        #front_or_back, orient_case, frm_buffer = raw_q.get()
+        ## decode jpeg
+        #nparr = np.fromstring(frm_buffer, dtype=np.uint8)
+        #img_np = cv2.imdecode(nparr, cv2.CV_LOAD_IMAGE_COLOR)
 
-        # preprocessing frame : flip , orientation
-        if orient_case == 0:
-            img_np = cv2.transpose(img_np)
-            img_np = cv2.flip(img_np, 1-front_or_back)
-        elif orient_case == 1:
-            img_np = cv2.flip(img_np, -1)
-        elif orient_case == 2:
-            img_np = cv2.transpose(img_np)
-            img_np = cv2.flip(img_np, front_or_back)
-        else:
-            pass
-        print "Frame shape: ", img_np.shape
+        ## preprocessing frame : flip , orientation
+        #if orient_case == 0:
+            #img_np = cv2.transpose(img_np)
+            #img_np = cv2.flip(img_np, 1-front_or_back)
+        #elif orient_case == 1:
+            #img_np = cv2.flip(img_np, -1)
+        #elif orient_case == 2:
+            #img_np = cv2.transpose(img_np)
+            #img_np = cv2.flip(img_np, front_or_back)
+        #else:
+            #pass
+        #print "Frame shape: ", img_np.shape
 
-        # encode back for the speed up of IPC through serialization
-        _, frm_buffer = cv2.imencode(".jpg", img_np, [int(cv2.IMWRITE_JPEG_QUALITY), 100])
-        for q in inp_qs:
-            q.put(frm_buffer)
-        raw_q.task_done()
+        ## encode back for the speed up of IPC through serialization
+        #_, frm_buffer = cv2.imencode(".jpg", img_np, [int(cv2.IMWRITE_JPEG_QUALITY), 100])
+        #for q in inp_qs:
+            #q.put(frm_buffer)
+        #raw_q.task_done()
 
 
 if __name__ == "__main__":
@@ -106,11 +113,11 @@ if __name__ == "__main__":
     else:
         print "Failed to start debug... Continuing without debug"
 
-    frm_raw_q = JoinableQueue()
+    #frm_raw_q = JoinableQueue()
     hand_inp_q = JoinableQueue()
     hand_res_q = JoinableQueue()
 
-    worker_preprocess_p = Process(target = preProcess, args = (frm_raw_q, (hand_inp_q, )))
+    #worker_preprocess_p = Process(target = preProcess, args = (frm_raw_q, (hand_inp_q, )))
 
     worker_hand_p1 = Process(target = modelPrepare, args = ('gestDetModel',
     ("/home/zerry/Work/Libs/py-faster-rcnn/models/VGG16/faster_rcnn_end2end_handGesdet/test.prototxt", "/home/zerry/Work/Libs/py-faster-rcnn/output/faster_rcnn_end2end_handGesdet/trainval/vgg16_faster_rcnn_handGesdet_aug_fulldata_iter_50000.caffemodel", 0.4, 0.8, ('natural', 'yes', 'no')), (hand_inp_q, hand_res_q)))
@@ -118,10 +125,10 @@ if __name__ == "__main__":
     worker_hand_p2 = Process(target = modelPrepare, args = ('gestDetModel', (
     "/home/zerry/Work/Libs/py-faster-rcnn/models/VGG16/faster_rcnn_end2end_handGesdet/test.prototxt","/home/zerry/Work/Libs/py-faster-rcnn/output/faster_rcnn_end2end_handGesdet/trainval/vgg16_faster_rcnn_handGesdet_aug_fulldata_iter_50000.caffemodel", 0.4, 0.8, ('natural', 'yes', 'no')), (hand_inp_q, hand_res_q)))
 
-    worker_preprocess_p.daemon = True
+    #worker_preprocess_p.daemon = True
     worker_hand_p1.daemon = True
     worker_hand_p2.daemon = True
-    worker_preprocess_p.start()
+    #worker_preprocess_p.start()
     worker_hand_p1.start()
     worker_hand_p2.start()
 
