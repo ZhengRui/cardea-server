@@ -1,6 +1,7 @@
 import _init_paths
 from fast_rcnn.test import *
 import time
+import Queue
 
 class gestDetModel:
     def __init__(self, proto, mdl, thresh_nms, thresh_conf, classes):
@@ -26,7 +27,7 @@ class gestDetModel:
             im_scale = float(1000) / float(im_size_max)
 
         im = cv2.resize(im_orig, None, None, fx=im_scale, fy=im_scale, interpolation=cv2.INTER_AREA)
-        #  print 'after scaling: ', im.shape
+        print 'after scaling: ', im.shape
 
         blobs['data'] = im_list_to_blob([im])
         im_scales = np.array([im_scale])
@@ -40,7 +41,7 @@ class gestDetModel:
         forward_kwargs = {'data': blobs['data'].astype(np.float32, copy=False), 'im_info': blobs['im_info'].astype(np.float32, copy=False)}
 
         blobs_out = self.net.forward(**forward_kwargs)
-        #  print 'prediction done'
+        print 'prediction done'
 
         rois = self.net.blobs['rois'].data.copy()
         boxes = rois[:, 1:5] / im_scale
@@ -63,7 +64,7 @@ class gestDetModel:
             #  print 'filtering done'
 
             if len(inds):
-                bboxs = dets[inds, :4] * im_scale
+                bboxs = dets[inds, :4]
                 confs = dets[inds, -1][:, np.newaxis]
                 bboxs = bboxs.astype(int)
                 handbboxs = np.hstack((bboxs, confs, np.ones(confs.shape) * cls_ind)) if not len(handbboxs) else np.vstack((handbboxs, np.hstack((bboxs, confs, np.ones(confs.shape) * cls_ind))))
@@ -72,11 +73,15 @@ class gestDetModel:
 
     def serv(self, inp_q, res_q):
         while True:
-            cli_name, frm_buffer = inp_q.get()
-            nparr = np.fromstring(frm_buffer, dtype=np.uint8)
-            img_np = cv2.imdecode(nparr, cv2.CV_LOAD_IMAGE_COLOR)
-            res_q.put((cli_name, self.detect(img_np)))
-            inp_q.task_done()
+            try:
+                cli_name, frm_buffer = inp_q.get(timeout=2)
+                nparr = np.fromstring(frm_buffer, dtype=np.uint8)
+                img_np = cv2.imdecode(nparr, cv2.CV_LOAD_IMAGE_COLOR)
+                res_q.put((cli_name, self.detect(img_np)))
+                inp_q.task_done()
+            except (Queue.Empty, KeyboardInterrupt):
+                #  print 'timeout in gesture'
+                pass
 
 
 

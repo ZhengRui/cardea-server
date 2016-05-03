@@ -1,11 +1,13 @@
 #!/usr/bin/env python
 
 from gestureModel import gestDetModel
+from faceModel import faceRecModel
 
 import socket
 import threading
 from threading import Event
 from multiprocessing import Process, JoinableQueue
+import Queue
 from multiprocessing.dummy import Process as DummyProcess
 import SocketServer as SS
 import signal
@@ -66,8 +68,30 @@ class RequestHandler(SS.BaseRequestHandler):
             #  and face_inp_q
 
             hand_inp_q.put((self.name, frm_buffer))
+
+            #  if weak mode
+            face_inp_q.put((self.name, frm_buffer, 0))
+
+            #  if strong mode
+            #
+
             self.res['hand_res_evt'].wait()
-            print self.res['hand_res']
+            self.res['face_res_evt'].wait()
+            print "hand result : ", self.res['hand_res'], "\nface result : ", self.res['face_res']
+
+            cv2.namedWindow("ResultPreview", cv2.CV_WINDOW_AUTOSIZE)
+            nparr = np.fromstring(frm_buffer, dtype=np.uint8)
+            im_show = cv2.imdecode(nparr, cv2.CV_LOAD_IMAGE_COLOR)
+            for (x0, y0, x1, y1, score, cls) in self.res['hand_res']:
+                cv2.rectangle(im_show, (int(x0), int(y0)), (int(x1), int(y1)), (0,0,255), 2)
+                cv2.putText(im_show, '{:.1f} : {:.3f}'.format(cls, score), (int(x0), int(y0)-10), cv2.FONT_HERSHEY_DUPLEX, 0.8, (0,0,255), 2)
+            recs, pps, scrs = self.res['face_res']
+            for i in range(len(recs)):
+                cv2.rectangle(im_show, (recs[i].left(), recs[i].top()), (recs[i].right(), recs[i].bottom()), (0,255,0), 2)
+                cv2.putText(im_show, 'P{}'.format(pps[i] if max(scrs[i]) > 0.55 else '****'), (recs[i].left(), recs[i].top()-10), cv2.FONT_HERSHEY_DUPLEX, 0.8, (0,255,0), 2)
+            im_show = cv2.resize(im_show, (int(im_show.shape[1]/2.), int(im_show.shape[0]/2.)), interpolation=cv2.INTER_AREA)
+            cv2.imshow("ResultPreview", im_show)
+            cv2.waitKey(0)
 
         else:   # profile message
             pass
@@ -120,12 +144,16 @@ def modelPrepare(model_class_name, params, tsk_queues):
 
 
 def resMailMan(res_q, jobtype): # jobtype is 'hand_res' or 'face_res'
-    while True:
-        cli_name, res = res_q.get()
-        client = skt_clients_map[cli_name]
-        client.res[jobtype] = res
-        client.res[jobtype + '_evt'].set()
-        #  print cli_name, " ", jobtype, " result mailed"
+    while dummycontinue:
+        try:
+            cli_name, res = res_q.get(timeout=2)
+            client = skt_clients_map[cli_name]
+            client.res[jobtype] = res
+            client.res[jobtype + '_evt'].set()
+            #  print cli_name, " ", jobtype, " result mailed"
+        except Queue.Empty:
+            #  print 'timeout in ', jobtype
+            pass
 
 
 if __name__ == "__main__":
@@ -141,26 +169,42 @@ if __name__ == "__main__":
     #  frm_raw_q = JoinableQueue()
     hand_inp_q = JoinableQueue()
     hand_res_q = JoinableQueue()
+    face_inp_q = JoinableQueue()
+    face_res_q = JoinableQueue()
 
     #  worker_preprocess_p = Process(target = preProcess, args = (frm_raw_q, (hand_inp_q, )))
 
     worker_hand_p1 = Process(target = modelPrepare, args = ('gestDetModel',
     ("/home/zerry/Work/Libs/py-faster-rcnn/models/VGG16/faster_rcnn_end2end_handGesdet/test.prototxt", "/home/zerry/Work/Libs/py-faster-rcnn/output/faster_rcnn_end2end_handGesdet/trainval/vgg16_faster_rcnn_handGesdet_aug_fulldata_iter_50000.caffemodel", 0.4, 0.8, ('natural', 'yes', 'no')), (hand_inp_q, hand_res_q)))
 
-    worker_hand_p2 = Process(target = modelPrepare, args = ('gestDetModel', (
-    "/home/zerry/Work/Libs/py-faster-rcnn/models/VGG16/faster_rcnn_end2end_handGesdet/test.prototxt","/home/zerry/Work/Libs/py-faster-rcnn/output/faster_rcnn_end2end_handGesdet/trainval/vgg16_faster_rcnn_handGesdet_aug_fulldata_iter_50000.caffemodel", 0.4, 0.8, ('natural', 'yes', 'no')), (hand_inp_q, hand_res_q)))
+    worker_hand_p2 = Process(target = modelPrepare, args = ('gestDetModel',
+    ("/home/zerry/Work/Libs/py-faster-rcnn/models/VGG16/faster_rcnn_end2end_handGesdet/test.prototxt", "/home/zerry/Work/Libs/py-faster-rcnn/output/faster_rcnn_end2end_handGesdet/trainval/vgg16_faster_rcnn_handGesdet_aug_fulldata_iter_50000.caffemodel", 0.4, 0.8, ('natural', 'yes', 'no')), (hand_inp_q, hand_res_q)))
 
+    worker_face_p1 = Process(target = modelPrepare, args = ('faceRecModel',
+    ("/home/zerry/Work/Datasets/UST-Face/haarcascade_frontalface_alt.xml", "/home/zerry/Work/Datasets/UST-Face/align/shape_predictor_68_face_landmarks.dat", "/home/zerry/Work/Projects/facerecognition/faceMFM/proto/LightenedCNN_B_deploy.prototxt", "/home/zerry/Work/Projects/facerecognition/faceMFM/model/LightenedCNN_B.caffemodel", "eltwise_fc1", "/home/zerry/Work/Datasets/UST-Face/svm_model.bin"), (face_inp_q, face_res_q)))
+
+    worker_face_p2 = Process(target = modelPrepare, args = ('faceRecModel',
+    ("/home/zerry/Work/Datasets/UST-Face/haarcascade_frontalface_alt.xml", "/home/zerry/Work/Datasets/UST-Face/align/shape_predictor_68_face_landmarks.dat", "/home/zerry/Work/Projects/facerecognition/faceMFM/proto/LightenedCNN_B_deploy.prototxt", "/home/zerry/Work/Projects/facerecognition/faceMFM/model/LightenedCNN_B.caffemodel", "eltwise_fc1", "/home/zerry/Work/Datasets/UST-Face/svm_model.bin"), (face_inp_q, face_res_q)))
+
+    dummycontinue = True
     worker_handres_mailman = DummyProcess(target = resMailMan, args = (hand_res_q, 'hand_res'))
+    worker_faceres_mailman = DummyProcess(target = resMailMan, args = (face_res_q, 'face_res'))
 
     #  worker_preprocess_p.daemon = True
     worker_hand_p1.daemon = True
     worker_hand_p2.daemon = True
+    worker_face_p1.daemon = True
+    worker_face_p2.daemon = True
+    worker_handres_mailman.daemon = True
     worker_handres_mailman.daemon = True
     #  worker_preprocess_p.start()
     worker_hand_p1.start()
     worker_hand_p2.start()
-    worker_handres_mailman.start()
+    worker_face_p1.start()
+    worker_face_p2.start()
 
+    worker_handres_mailman.start()
+    worker_faceres_mailman.start()
 
     HOST, PORT = "", 9999
     server = Server((HOST, PORT), RequestHandler)
@@ -174,6 +218,20 @@ if __name__ == "__main__":
     except:
         server.shutdown()
         server.server_close()
+        worker_hand_p1.terminate()
+        worker_hand_p2.terminate()
+        worker_face_p1.terminate()
+        worker_face_p2.terminate()
+
+        worker_hand_p1.join()
+        worker_hand_p2.join()
+        worker_face_p1.join()
+        worker_face_p2.join()
+
+        dummycontinue = False
+        worker_handres_mailman.join()
+        worker_faceres_mailman.join()
+
 
 
 
