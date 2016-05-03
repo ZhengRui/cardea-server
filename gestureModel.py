@@ -26,7 +26,7 @@ class gestDetModel:
             im_scale = float(1000) / float(im_size_max)
 
         im = cv2.resize(im_orig, None, None, fx=im_scale, fy=im_scale, interpolation=cv2.INTER_AREA)
-        print 'after scaling: ', im.shape
+        #  print 'after scaling: ', im.shape
 
         blobs['data'] = im_list_to_blob([im])
         im_scales = np.array([im_scale])
@@ -40,7 +40,7 @@ class gestDetModel:
         forward_kwargs = {'data': blobs['data'].astype(np.float32, copy=False), 'im_info': blobs['im_info'].astype(np.float32, copy=False)}
 
         blobs_out = self.net.forward(**forward_kwargs)
-        print 'prediction done'
+        #  print 'prediction done'
 
         rois = self.net.blobs['rois'].data.copy()
         boxes = rois[:, 1:5] / im_scale
