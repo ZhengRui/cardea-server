@@ -72,10 +72,10 @@ class gestDetModel:
 
     def serv(self, inp_q, res_q):
         while True:
-            frm_buffer = inp_q.get()
+            cli_name, frm_buffer = inp_q.get()
             nparr = np.fromstring(frm_buffer, dtype=np.uint8)
             img_np = cv2.imdecode(nparr, cv2.CV_LOAD_IMAGE_COLOR)
-            res_q.put(self.detect(img_np))
+            res_q.put((cli_name, self.detect(img_np)))
             inp_q.task_done()
 
 

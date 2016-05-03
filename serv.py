@@ -4,7 +4,9 @@ from gestureModel import gestDetModel
 
 import socket
 import threading
+from threading import Event
 from multiprocessing import Process, JoinableQueue
+from multiprocessing.dummy import Process as DummyProcess
 import SocketServer as SS
 import signal
 import struct
@@ -17,12 +19,23 @@ import caffe
 
 
 class RequestHandler(SS.BaseRequestHandler):
-    def recvMsg(self):
+
+    def __init__(self, request, client_address, server):
+        self.name = threading.currentThread().getName()
+        self.res = {}
+        skt_clients_map[self.name] = self
+        SS.BaseRequestHandler.__init__(self, request, client_address, server)
+        return
+
+    def handle(self):
+        print "tcp request received, create client ", self.name
+
         headerBytes = self.request.recv(32)
         header = struct.unpack('8i', headerBytes)
-        print header
+        #print header
 
         if not header[0]:   # frame prediction message
+            self.res={'hand_res':None, 'hand_res_evt':Event(), 'face_res':None, 'face_res_evt':Event()}
             lat, lon = struct.unpack('<2d', self.request.recv(16))
             #  print lat, lon
 
@@ -49,19 +62,17 @@ class RequestHandler(SS.BaseRequestHandler):
             # already preprocessed by the client, directly put frm_buffer to hand_inp_q
             # and face_inp_q
 
-            hand_inp_q.put(frm_buffer)
-
-            print hand_res_q.qsize()
-
+            hand_inp_q.put((self.name, frm_buffer))
+            self.res['hand_res_evt'].wait()
+            print self.res['hand_res']
 
         else:   # profile message
             pass
 
-
-    def handle(self):
-        print "tcp request issued"
-        self.recvMsg()
-        print "tcp connection closed"
+    def finish(self):
+        skt_clients_map.pop(self.name)
+        print "tcp request finished"
+        return SS.BaseRequestHandler.finish(self)
 
 class Server(SS.ThreadingMixIn, SS.TCPServer):
     pass
@@ -105,6 +116,15 @@ def modelPrepare(model_class_name, params, tsk_queues):
         #raw_q.task_done()
 
 
+def resMailMan(res_q, jobtype): # jobtype is 'hand_res' or 'face_res'
+    while True:
+        cli_name, res = res_q.get()
+        client = skt_clients_map[cli_name]
+        client.res[jobtype] = res
+        client.res[jobtype + '_evt'].set()
+        #print cli_name, " ", jobtype, " result mailed"
+
+
 if __name__ == "__main__":
 
     import wingdbstub
@@ -112,6 +132,8 @@ if __name__ == "__main__":
         print "Success starting debug"
     else:
         print "Failed to start debug... Continuing without debug"
+
+    skt_clients_map = {}
 
     #frm_raw_q = JoinableQueue()
     hand_inp_q = JoinableQueue()
@@ -125,12 +147,16 @@ if __name__ == "__main__":
     worker_hand_p2 = Process(target = modelPrepare, args = ('gestDetModel', (
     "/home/zerry/Work/Libs/py-faster-rcnn/models/VGG16/faster_rcnn_end2end_handGesdet/test.prototxt","/home/zerry/Work/Libs/py-faster-rcnn/output/faster_rcnn_end2end_handGesdet/trainval/vgg16_faster_rcnn_handGesdet_aug_fulldata_iter_50000.caffemodel", 0.4, 0.8, ('natural', 'yes', 'no')), (hand_inp_q, hand_res_q)))
 
+    worker_handres_mailman = DummyProcess(target = resMailMan, args = (hand_res_q, 'hand_res'))
+
     #worker_preprocess_p.daemon = True
     worker_hand_p1.daemon = True
     worker_hand_p2.daemon = True
+    worker_handres_mailman.daemon = True
     #worker_preprocess_p.start()
     worker_hand_p1.start()
     worker_hand_p2.start()
+    worker_handres_mailman.start()
 
 
     HOST, PORT = "", 9999

@@ -5,10 +5,10 @@
     + run caffe model for each process, hand model cost 1.8G GRAM in forward(), it will be 2 hand models
       plus 2 face models running concurrently
     + connected sockets as producer add msgs to queue for model processes to deal with
+    + model processes return results from queue to producer sockets
 
 * ToDo:
 
-    + model processes return results from queue to producer sockets
     + add face recognition model
     + retrieve preference and action making
     + receive/parse preference updation message
