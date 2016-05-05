@@ -17,6 +17,8 @@ import cv2
 import sys
 import os
 import time
+import cPickle as pkl
+import pandas as pd
 import caffe
 
 
@@ -37,7 +39,7 @@ class RequestHandler(SS.BaseRequestHandler):
 
         headerBytes = self.request.recv(32)
         header = struct.unpack('8i', headerBytes)
-        #  print header
+        print header
 
         if not header[0]:   # frame prediction message
             self.res={'hand_res':None, 'hand_res_evt':Event(), 'face_res':None, 'face_res_evt':Event()}
@@ -77,24 +79,49 @@ class RequestHandler(SS.BaseRequestHandler):
 
             self.res['hand_res_evt'].wait()
             self.res['face_res_evt'].wait()
-            print "hand result : ", self.res['hand_res'], "\nface result : ", self.res['face_res']
+            #  print "hand result : ", self.res['hand_res'], "\nface result : ", self.res['face_res']
 
-            cv2.namedWindow("ResultPreview", cv2.CV_WINDOW_AUTOSIZE)
-            nparr = np.fromstring(frm_buffer, dtype=np.uint8)
-            im_show = cv2.imdecode(nparr, cv2.CV_LOAD_IMAGE_COLOR)
-            for (x0, y0, x1, y1, score, cls) in self.res['hand_res']:
-                cv2.rectangle(im_show, (int(x0), int(y0)), (int(x1), int(y1)), (0,0,255), 2)
-                cv2.putText(im_show, '{:.1f} : {:.3f}'.format(cls, score), (int(x0), int(y0)-10), cv2.FONT_HERSHEY_DUPLEX, 0.8, (0,0,255), 2)
-            recs, pps, scrs = self.res['face_res']
-            for i in range(len(recs)):
-                cv2.rectangle(im_show, (recs[i].left(), recs[i].top()), (recs[i].right(), recs[i].bottom()), (0,255,0), 2)
-                cv2.putText(im_show, 'P{}'.format(pps[i] if max(scrs[i]) > 0.55 else '****'), (recs[i].left(), recs[i].top()-10), cv2.FONT_HERSHEY_DUPLEX, 0.8, (0,255,0), 2)
-            im_show = cv2.resize(im_show, (int(im_show.shape[1]/2.), int(im_show.shape[0]/2.)), interpolation=cv2.INTER_AREA)
-            cv2.imshow("ResultPreview", im_show)
-            cv2.waitKey(0)
+            #  cv2.namedWindow("ResultPreview", cv2.CV_WINDOW_AUTOSIZE)
+            #  nparr = np.fromstring(frm_buffer, dtype=np.uint8)
+            #  im_show = cv2.imdecode(nparr, cv2.CV_LOAD_IMAGE_COLOR)
+            #  for (x0, y0, x1, y1, score, cls) in self.res['hand_res']:
+                #  cv2.rectangle(im_show, (int(x0), int(y0)), (int(x1), int(y1)), (0,0,255), 2)
+                #  cv2.putText(im_show, '{:.1f} : {:.3f}'.format(cls, score), (int(x0), int(y0)-10), cv2.FONT_HERSHEY_DUPLEX, 0.8, (0,0,255), 2)
+            #  recs, pps, scrs = self.res['face_res']
+            #  for i in range(len(recs)):
+                #  cv2.rectangle(im_show, (recs[i].left(), recs[i].top()), (recs[i].right(), recs[i].bottom()), (0,255,0), 2)
+                #  cv2.putText(im_show, 'P{}'.format(pps[i] if max(scrs[i]) > 0.55 else '****'), (recs[i].left(), recs[i].top()-10), cv2.FONT_HERSHEY_DUPLEX, 0.8, (0,255,0), 2)
+            #  im_show = cv2.resize(im_show, (int(im_show.shape[1]/2.), int(im_show.shape[0]/2.)), interpolation=cv2.INTER_AREA)
+            #  cv2.imshow("ResultPreview", im_show)
+            #  cv2.waitKey(0)
 
         else:   # profile message
-            pass
+            self.res={'pref_wrt_evt':Event()}
+
+            size = sum(header[1:])
+            size_recv = 0
+            pref_buffer = ''
+
+            while size_recv < size:
+                chunk = self.request.recv(size - size_recv)
+                if not chunk:
+                    print "socket receiving error"
+                    return None
+                else:
+                    pref_buffer += chunk
+                    size_recv += len(chunk)
+                    #  print "size, size_recv", size, size_recv
+
+            print "Preference updation received"
+
+            parser_str = '<' + str(header[1]) + 's' + '2?2d' + str(header[4]/4) + 'i1i'
+            pref_misc = struct.unpack(parser_str, pref_buffer[:sum(header[1:-2])])
+            pref_myfeat = np.fromstring(pref_buffer[sum(header[1:-2]):sum(header[1:-1])], dtype='<f4').reshape((header[-2]/1024, 256))
+            pref_otfeat = np.fromstring(pref_buffer[sum(header[1:-1]):], dtype='<f4').reshape((header[-1]/1024, 256))
+            #  print pref_misc, pref_myfeat.shape, pref_otfeat.shape
+            pref_wrt_q.put((self.name, pref_misc, pref_myfeat, pref_otfeat))
+            #  self.res['pref_wrt_evt'].wait()
+
 
     def finish(self):
         skt_clients_map.pop(self.name)
@@ -156,6 +183,30 @@ def resMailMan(res_q, jobtype): # jobtype is 'hand_res' or 'face_res'
             pass
 
 
+def savePref(pref_q, jobtype):  # jobtype is 'pref_wrt'
+    while dummycontinue:
+        try:
+            cli_name, pref_misc, pref_myfeat, pref_otfeat = pref_q.get(timeout=2)
+            # save profile to pref_add_db and dump pref_add_db to pref_add_fd
+
+            username = pref_misc[0]
+            if username in pref_add_db.index:
+                pref_myfeat_old = pref_add_db.get_value(username, 'myfeature')
+                pref_myfeat = np.vstack((pref_myfeat_old, pref_myfeat))
+
+            pref_add_db.set_value(username, 'gesture', pref_misc[1:3])
+            pref_add_db.set_value(username, 'location', pref_misc[3:5])
+            pref_add_db.set_value(username, 'scene', pref_misc[5:-1])
+            pref_add_db.set_value(username, 'policy', pref_misc[-1])
+            pref_add_db.set_value(username, 'myfeature', pref_myfeat)
+            pref_add_db.set_value(username, 'otfeature', pref_otfeat)
+
+            pkl.dump(pref_add_db, pref_add_fd)
+            client = skt_clients_map[cli_name]
+            client.res[jobtype + '_evt'].set()
+        except Queue.Empty:
+            pass
+
 if __name__ == "__main__":
 
     import wingdbstub
@@ -171,6 +222,7 @@ if __name__ == "__main__":
     hand_res_q = JoinableQueue()
     face_inp_q = JoinableQueue()
     face_res_q = JoinableQueue()
+    pref_wrt_q = JoinableQueue()
 
     #  worker_preprocess_p = Process(target = preProcess, args = (frm_raw_q, (hand_inp_q, )))
 
@@ -186,6 +238,7 @@ if __name__ == "__main__":
     worker_face_p2 = Process(target = modelPrepare, args = ('faceRecModel',
     ("/home/zerry/Work/Datasets/UST-Face/haarcascade_frontalface_alt.xml", "/home/zerry/Work/Datasets/UST-Face/align/shape_predictor_68_face_landmarks.dat", "/home/zerry/Work/Projects/facerecognition/faceMFM/proto/LightenedCNN_B_deploy.prototxt", "/home/zerry/Work/Projects/facerecognition/faceMFM/model/LightenedCNN_B.caffemodel", "eltwise_fc1", "/home/zerry/Work/Datasets/UST-Face/svm_model.bin"), (face_inp_q, face_res_q)))
 
+
     dummycontinue = True
     worker_handres_mailman = DummyProcess(target = resMailMan, args = (hand_res_q, 'hand_res'))
     worker_faceres_mailman = DummyProcess(target = resMailMan, args = (face_res_q, 'face_res'))
@@ -197,14 +250,26 @@ if __name__ == "__main__":
     worker_face_p2.daemon = True
     worker_handres_mailman.daemon = True
     worker_handres_mailman.daemon = True
-    #  worker_preprocess_p.start()
-    worker_hand_p1.start()
-    worker_hand_p2.start()
-    worker_face_p1.start()
-    worker_face_p2.start()
 
-    worker_handres_mailman.start()
-    worker_faceres_mailman.start()
+    #  worker_preprocess_p.start()
+    #  worker_hand_p1.start()
+    #  worker_hand_p2.start()
+    #  worker_face_p1.start()
+    #  worker_face_p2.start()
+    #  worker_handres_mailman.start()
+    #  worker_faceres_mailman.start()
+
+    pref_add_fd = open('./profiles/profiles_add.pkl', 'r+b')
+    try:
+        pref_add_db = pkl.load(pref_add_fd)
+    except EOFError:    # if profiles_add.pkl is empty
+        pref_add_db = pd.DataFrame(index=[], columns=['username', 'gesture', 'location', 'scene', 'policy', 'myfeature', 'otfeature'])
+        pref_add_db.set_index(['username'], inplace=True)
+
+    worker_pref_writeman = DummyProcess(target = savePref, args = (pref_wrt_q, 'pref_wrt'))
+    worker_pref_writeman.daemon = True
+    worker_pref_writeman.start()
+
 
     HOST, PORT = "", 9999
     server = Server((HOST, PORT), RequestHandler)
@@ -218,19 +283,22 @@ if __name__ == "__main__":
     except:
         server.shutdown()
         server.server_close()
-        worker_hand_p1.terminate()
-        worker_hand_p2.terminate()
-        worker_face_p1.terminate()
-        worker_face_p2.terminate()
+        #  worker_hand_p1.terminate()
+        #  worker_hand_p2.terminate()
+        #  worker_face_p1.terminate()
+        #  worker_face_p2.terminate()
 
-        worker_hand_p1.join()
-        worker_hand_p2.join()
-        worker_face_p1.join()
-        worker_face_p2.join()
+        #  worker_hand_p1.join()
+        #  worker_hand_p2.join()
+        #  worker_face_p1.join()
+        #  worker_face_p2.join()
 
-        dummycontinue = False
-        worker_handres_mailman.join()
-        worker_faceres_mailman.join()
+        #  dummycontinue = False
+        #  worker_handres_mailman.join()
+        #  worker_faceres_mailman.join()
+
+        with pref_add_fd:
+            worker_pref_writeman.join()
 
 
 
