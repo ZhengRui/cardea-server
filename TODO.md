@@ -8,12 +8,12 @@
     + model processes return results from queue to producer sockets
     + add face recognition model
     + exit elegantly with ctrl+c
+    + receive/parse preference updation message
+    + write to preference db
 
 * ToDo:
 
     + retrieve preference and action making
-    + receive/parse preference updation message
-    + write to preference db
     + automatically retrainning svm after new features saved
     + automatically reload new svm model
     + strong / weak privacy mode

@@ -120,7 +120,7 @@ class RequestHandler(SS.BaseRequestHandler):
             pref_otfeat = np.fromstring(pref_buffer[sum(header[1:-1]):], dtype='<f4').reshape((header[-1]/1024, 256))
             #  print pref_misc, pref_myfeat.shape, pref_otfeat.shape
             pref_wrt_q.put((self.name, pref_misc, pref_myfeat, pref_otfeat))
-            #  self.res['pref_wrt_evt'].wait()
+            self.res['pref_wrt_evt'].wait()
 
 
     def finish(self):
@@ -190,6 +190,7 @@ def savePref(pref_q, jobtype):  # jobtype is 'pref_wrt'
             # save profile to pref_add_db and dump pref_add_db to pref_add_fd
 
             username = pref_misc[0]
+            print username, pref_myfeat.shape, pref_otfeat.shape
             if username in pref_add_db.index:
                 pref_myfeat_old = pref_add_db.get_value(username, 'myfeature')
                 pref_myfeat = np.vstack((pref_myfeat_old, pref_myfeat))
@@ -199,9 +200,9 @@ def savePref(pref_q, jobtype):  # jobtype is 'pref_wrt'
             pref_add_db.set_value(username, 'scene', pref_misc[5:-1])
             pref_add_db.set_value(username, 'policy', pref_misc[-1])
             pref_add_db.set_value(username, 'myfeature', pref_myfeat)
-            pref_add_db.set_value(username, 'otfeature', pref_otfeat)
+            if pref_otfeat.shape[0]:
+                pref_add_db.set_value(username, 'otfeature', pref_otfeat)
 
-            pkl.dump(pref_add_db, pref_add_fd)
             client = skt_clients_map[cli_name]
             client.res[jobtype + '_evt'].set()
         except Queue.Empty:
@@ -259,12 +260,12 @@ if __name__ == "__main__":
     #  worker_handres_mailman.start()
     #  worker_faceres_mailman.start()
 
-    pref_add_fd = open('./profiles/profiles_add.pkl', 'r+b')
-    try:
-        pref_add_db = pkl.load(pref_add_fd)
-    except EOFError:    # if profiles_add.pkl is empty
-        pref_add_db = pd.DataFrame(index=[], columns=['username', 'gesture', 'location', 'scene', 'policy', 'myfeature', 'otfeature'])
-        pref_add_db.set_index(['username'], inplace=True)
+    with open('./profiles/profiles_add.pkl', 'rb') as pref_add_fd:
+        try:
+            pref_add_db = pkl.load(pref_add_fd)
+        except EOFError:    # if profiles_add.pkl is empty
+            pref_add_db = pd.DataFrame(index=[], columns=['username', 'gesture', 'location', 'scene', 'policy', 'myfeature', 'otfeature'])
+            pref_add_db.set_index(['username'], inplace=True)
 
     worker_pref_writeman = DummyProcess(target = savePref, args = (pref_wrt_q, 'pref_wrt'))
     worker_pref_writeman.daemon = True
@@ -293,12 +294,13 @@ if __name__ == "__main__":
         #  worker_face_p1.join()
         #  worker_face_p2.join()
 
-        #  dummycontinue = False
+        dummycontinue = False
         #  worker_handres_mailman.join()
         #  worker_faceres_mailman.join()
 
-        with pref_add_fd:
-            worker_pref_writeman.join()
+        worker_pref_writeman.join()
+        with open('./profiles/profiles_add.pkl', 'wb') as pref_add_fd:
+            pkl.dump(pref_add_db, pref_add_fd)
 
 
 
