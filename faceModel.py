@@ -18,12 +18,12 @@ upper = np.array([30, 255, 255], dtype="uint8")
 kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
 
 class faceRecModel:
-    def __init__(self, cascade, mdl_landmarks, proto_caffe, mdl_caffe, blob_name, mdl_svm):
+    def __init__(self, cascade, mdl_landmarks, proto_caffe, mdl_caffe, blob_name, mdl_start_pth):
         self.cascade = cv2.CascadeClassifier(cascade)
         self.alignment = ADlib(mdl_landmarks)
         self.net = caffe.Net(proto_caffe, mdl_caffe, caffe.TEST)
         self.blob_name = blob_name
-        self.classify = svm_load_model(mdl_svm)
+        self.classify = svm_load_model(mdl_start_pth)
 
     def faceDetCV(self, frm, skinFilter=True):
         bbs = self.cascade.detectMultiScale(cv2.equalizeHist(cv2.cvtColor(frm, cv2.COLOR_BGR2GRAY)), scaleFactor=1.1, minNeighbors=3, minSize=(40, 40), flags=cv2.cv.CV_HAAR_SCALE_IMAGE)
@@ -94,9 +94,13 @@ class faceRecModel:
         p_label, p_acc, p_vals = svm_predict([0] * len(feature), feature, model, '-b 1 -q')
         return p_label, p_vals
 
-    def serv(self, inp_q, res_q):
+    def serv(self, inp_q, res_q, continue_evt, reload_val, mdl_update_pth):
         while True:
             try:
+                continue_evt.wait()
+                if reload_val.value:
+                    self.classify = svm_load_model(mdl_update_pth)
+                    reload_val.value = 0
                 cli_name, data_buffer, mode = inp_q.get(timeout=2)
 
                 bbs_filt, labels, probs = [], [], []
@@ -110,6 +114,7 @@ class faceRecModel:
                     feats = self.featureExtract(faces)
 
                 if len(feats):
+
                     labels, probs = self.runSVM(feats.tolist(), self.classify)
 
                 res_q.put((cli_name, (bbs_filt, labels, probs)))

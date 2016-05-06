@@ -1,0 +1,8 @@
+(dp1
+I0
+S'zerry'
+p2
+sI1
+S'girl'
+p3
+s.
