@@ -118,7 +118,7 @@ class faceRecModel:
 
                     labels, probs = self.runSVM(feats.tolist(), self.classify)
 
-                res_q.put((cli_name, (bbs_filt, labels, probs)))
+                res_q.put((cli_name, (bbs_filt, labels, probs, feats)))
                 inp_q.task_done()
             except (Queue.Empty, KeyboardInterrupt):
                 #  print 'timeout in face'
