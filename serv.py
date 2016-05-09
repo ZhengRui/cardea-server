@@ -81,19 +81,20 @@ class RequestHandler(SS.BaseRequestHandler):
             self.res['face_res_evt'].wait()
             print "hand result : ", self.res['hand_res'], "\nface result : ", self.res['face_res']
 
-            cv2.namedWindow("ResultPreview", cv2.CV_WINDOW_AUTOSIZE)
-            nparr = np.fromstring(frm_buffer, dtype=np.uint8)
-            im_show = cv2.imdecode(nparr, cv2.CV_LOAD_IMAGE_COLOR)
-            for (x0, y0, x1, y1, score, cls) in self.res['hand_res']:
-                cv2.rectangle(im_show, (int(x0), int(y0)), (int(x1), int(y1)), (0,0,255), 2)
-                cv2.putText(im_show, '{:.1f} : {:.3f}'.format(cls, score), (int(x0), int(y0)-10), cv2.FONT_HERSHEY_DUPLEX, 0.8, (0,0,255), 2)
+            #cv2.namedWindow("ResultPreview", cv2.CV_WINDOW_AUTOSIZE)
+            #nparr = np.fromstring(frm_buffer, dtype=np.uint8)
+            #im_show = cv2.imdecode(nparr, cv2.CV_LOAD_IMAGE_COLOR)
+            #for (x0, y0, x1, y1, score, cls) in self.res['hand_res']:
+                #cv2.rectangle(im_show, (int(x0), int(y0)), (int(x1), int(y1)), (0,0,255), 2)
+                #cv2.putText(im_show, '{:.1f} : {:.3f}'.format(cls, score), (int(x0), int(y0)-10), cv2.FONT_HERSHEY_DUPLEX, 0.8, (0,0,255), 2)
             recs, pps, scrs = self.res['face_res']
             for i in range(len(recs)):
-                cv2.rectangle(im_show, (recs[i].left(), recs[i].top()), (recs[i].right(), recs[i].bottom()), (0,255,0), 2)
-                cv2.putText(im_show, '{}'.format(uid2name[pps[i]] if max(scrs[i]) > 0.55 else '****'), (recs[i].left(), recs[i].top()-10), cv2.FONT_HERSHEY_DUPLEX, 0.8, (0,255,0), 2)
-            im_show = cv2.resize(im_show, (int(im_show.shape[1]/2.), int(im_show.shape[0]/2.)), interpolation=cv2.INTER_AREA)
-            cv2.imshow("ResultPreview", im_show)
-            cv2.waitKey(0)
+                #cv2.rectangle(im_show, (recs[i].left(), recs[i].top()), (recs[i].right(), recs[i].bottom()), (0,255,0), 2)
+                #cv2.putText(im_show, '{}'.format(uid2name[pps[i]] if max(scrs[i]) > 0.55 else '****'), (recs[i].left(), recs[i].top()-10), cv2.FONT_HERSHEY_DUPLEX, 0.8, (0,255,0), 2)
+                print uid2name[pps[i]] if max(scrs[i]) > 0.55 else 'unknown person'
+            #im_show = cv2.resize(im_show, (int(im_show.shape[1]/2.), int(im_show.shape[0]/2.)), interpolation=cv2.INTER_AREA)
+            #cv2.imshow("ResultPreview", im_show)
+            #cv2.waitKey(0)
 
 
         else:   # profile message
@@ -239,14 +240,16 @@ def svmTrain(db, ratio = 0.8):
             label = uid * np.ones((feat.shape[0],1))
             idx_rand = np.random.permutation(feat.shape[0])
             pos_split = int(ratio * len(idx_rand))
-            train_feat = np.vstack((train_feat, feat[:pos_split, :])) if uid else feat[:pos_split, :]
-            train_label = np.vstack((train_label, label[:pos_split, :])) if uid else label[:pos_split, :]
-            test_feat = np.vstack((test_feat, feat[pos_split:, :])) if uid else feat[pos_split:, :]
-            test_label = np.vstack((test_label, label[pos_split:, :])) if uid else label[pos_split:, :]
+            train_idx = idx_rand[:pos_split]
+            test_idx = idx_rand[pos_split:]
+            train_feat = np.vstack((train_feat, feat[train_idx, :])) if uid else feat[train_idx, :]
+            train_label = np.vstack((train_label, label[train_idx, :])) if uid else label[train_idx, :]
+            test_feat = np.vstack((test_feat, feat[test_idx, :])) if uid else feat[test_idx, :]
+            test_label = np.vstack((test_label, label[test_idx, :])) if uid else label[test_idx, :]
             uid += 1
 
     prob = svm_problem(map(int, train_label.flatten().tolist()), train_feat.tolist())
-    param = svm_parameter('-t 0 -c 4 -b 1 -q')
+    param = svm_parameter('-t 0 -c 4 -b 1')
     model = svm_train(prob, param)
 
     print "test split: "
@@ -258,7 +261,7 @@ def svmTrain(db, ratio = 0.8):
     return model, uid_to_name
 
 def updateFaceClassifier(interval):
-    global pref_add_db, pref_db
+    global pref_add_db, pref_db, uid2name
     while dummycontinue:
         time.sleep(interval)
         if len(pref_add_db.index):
@@ -284,7 +287,7 @@ def updateFaceClassifier(interval):
                 num_tot_feat += 1 if feat.shape[0] else 0
 
             svm_reload = False
-            if num_new_feat and num_tot_feat >= 2:  # if in last interval there are users uploaded new features and svm is trainable
+            if True or num_new_feat and num_tot_feat >= 2:  # if in last interval there are users uploaded new features and svm is trainable
                 mdl_svm_fresh, uid_to_name = svmTrain(pref_db_tot)
                 svm_save_model('./profiles/svm_model.bin', mdl_svm_fresh)
                 with open('./profiles/uid2name.pkl', 'wb') as uid2name_fd:
@@ -362,7 +365,7 @@ if __name__ == "__main__":
 
     #  worker_preprocess_p.start()
     worker_hand_p1.start()
-    #worker_hand_p2.start()
+    #  worker_hand_p2.start()
     worker_face_p1.start()
     worker_face_p2.start()
     worker_handres_mailman.start()

@@ -110,6 +110,7 @@ class faceRecModel:
                 else:
                     nparr = np.fromstring(data_buffer, dtype=np.uint8)
                     img_np = cv2.imdecode(nparr, cv2.CV_LOAD_IMAGE_COLOR)
+
                     faces, bbs_filt = self.faceDetAlign(img_np)
                     feats = self.featureExtract(faces)
 
