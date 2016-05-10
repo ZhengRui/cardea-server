@@ -12,6 +12,7 @@ import SocketServer as SS
 import signal
 import struct
 import numpy as np
+import math
 import cv2
 import sys
 import os
@@ -42,7 +43,8 @@ class RequestHandler(SS.BaseRequestHandler):
         print header
 
         if not header[0]:   # frame prediction message
-            self.res={'hand_res':None, 'hand_res_evt':Event(), 'face_res':None, 'face_res_evt':Event()}
+            self.res={'hand_res':None, 'hand_res_evt':Event(), 'face_res':None, 'face_res_evt':Event(),
+                        'profiles':{}, 'face_to_blur':[], 'face_to_check':[]}
             lat, lon = struct.unpack('<2d', self.request.recv(16))
             #  print lat, lon
 
@@ -79,7 +81,71 @@ class RequestHandler(SS.BaseRequestHandler):
 
             self.res['hand_res_evt'].wait()
             self.res['face_res_evt'].wait()
-            print "hand result : ", self.res['hand_res'], "\nface result : ", self.res['face_res']
+            # print "hand result : ", self.res['hand_res'], "\nface result : ", self.res['face_res']
+
+            # Case 0: no registered user, no operation
+            # Case 1: gesture 'no', blurring
+            # Case 2: gesture 'yes', not blurring
+            # Case 3: out of distance, not blurring
+            # Case 4: otfeature matched, blurring
+            # Case 5: sending scene lists back
+
+            # is any registered user?
+            if len(self.res['profiles']) == 0:
+                print "Case 0: no registered user, no operation"
+
+            else: # for registered users
+                # find nearest face for each yes or no gesture
+                gesture_user = {2:[], 3:[]}
+
+                recs, pps, _, feats = self.res['face_res']
+                face_centers = np.zeros((len(recs), 2))
+                for i in range(len(recs)):
+                    center = recs[i].center()
+                    face_centers[i, :] = [center.x, center.y]
+
+
+                for (x0, y0, x1, y1, score, cls) in self.res['hand_res']:
+                    if cls != 1: # not for natural hand
+                        hand_center = np.array([(x0 + x1) / 2, (y0 + y1) / 2])
+                        dis_centers = np.linalg.norm(face_centers-hand_center, ord=2, axis=1)
+                        user_dis_min = uid2name[pps[np.argmin(dis_centers)]]
+                        gesture_user[cls].append(user_dis_min)
+
+                for user, profile in self.res['profiles'].iteritems():
+                    # 'yes' gesture is used
+                    if profile[0][0] == 1 and user in gesture_user[2]:
+                        print "Case 2: gesture 'yes', not blurring"
+
+                    # 'no' gesture is used
+                    elif profile[0][1] == 1 and user in gesture_user[3]:
+                        print "Case 1: gesture 'no', blurring"
+                        self.res['face_to_blur'].append(profile[4])
+
+                    # no hand gesture is triggered
+                    else:
+                        # location filter
+                        distance = calDistance((lat, lon), profile[1])
+                        if distance > 2.0:
+                            print "Case 3: out of distance, not blurring"
+
+                        else:
+                            # compare others features in profiles with those in the picture
+
+                            should_blur = calSimilarity(profile[5], feats)
+                            if should_blur:
+                                print "Case 4: otfeature matched, blurring"
+                                self.res['face_to_blur'].append(profile[4])
+                            else: # no matched otfeatures
+                                # send back scene lists
+                                print 'Case 5: sending scene lists back'
+                                self.res['face_to_check'].append(profile[4])
+                                self.res['face_to_check'].append(profile[2])
+
+
+            # send message back to the client
+            # self.res['hand_res'], self.res['face_res'], self.res['face_to_blur'], self.res['face_to_check']
+
 
             #cv2.namedWindow("ResultPreview", cv2.CV_WINDOW_AUTOSIZE)
             #nparr = np.fromstring(frm_buffer, dtype=np.uint8)
@@ -87,11 +153,11 @@ class RequestHandler(SS.BaseRequestHandler):
             #for (x0, y0, x1, y1, score, cls) in self.res['hand_res']:
                 #cv2.rectangle(im_show, (int(x0), int(y0)), (int(x1), int(y1)), (0,0,255), 2)
                 #cv2.putText(im_show, '{:.1f} : {:.3f}'.format(cls, score), (int(x0), int(y0)-10), cv2.FONT_HERSHEY_DUPLEX, 0.8, (0,0,255), 2)
-            recs, pps, scrs = self.res['face_res']
+            recs, pps, scrs, _ = self.res['face_res']
             for i in range(len(recs)):
                 #cv2.rectangle(im_show, (recs[i].left(), recs[i].top()), (recs[i].right(), recs[i].bottom()), (0,255,0), 2)
                 #cv2.putText(im_show, '{}'.format(uid2name[pps[i]] if max(scrs[i]) > 0.55 else '****'), (recs[i].left(), recs[i].top()-10), cv2.FONT_HERSHEY_DUPLEX, 0.8, (0,255,0), 2)
-                print uid2name[pps[i]] if max(scrs[i]) > 0.55 else 'unknown person'
+                print uid2name[pps[i]] if max(scrs[i]) > 0.5 else 'unknown person'
             #im_show = cv2.resize(im_show, (int(im_show.shape[1]/2.), int(im_show.shape[0]/2.)), interpolation=cv2.INTER_AREA)
             #cv2.imshow("ResultPreview", im_show)
             #cv2.waitKey(0)
@@ -178,6 +244,18 @@ def resMailMan(res_q, jobtype): # jobtype is 'hand_res' or 'face_res'
             cli_name, res = res_q.get(timeout=2)
             client = skt_clients_map[cli_name]
             client.res[jobtype] = res
+
+            # retrieve registered users' profiles, rewrite myfeature with bbs
+            if jobtype == 'face_res':
+                recs, pps, scrs, feats = res
+                for i in range(len(recs)):
+                    if max(scrs[i]) > 0.5:
+                        username = uid2name[pps[i]]
+                        client.res['profiles'][username] = pref_db.ix[username].values.tolist()
+                        client.res['profiles'][username][4] = recs[i]
+                        client.res['profiles'][username].append(i)
+
+
             client.res[jobtype + '_evt'].set()
             #  print cli_name, " ", jobtype, " result mailed"
         except Queue.Empty:
@@ -305,6 +383,31 @@ def updateFaceClassifier(interval):
                 svm_reload_2.value = 1
             facemdl_continue_evt.set()
             faceres_empty_evt.clear()
+
+def calDistance(origin, destination):
+    if not len(destination):
+        return 0
+    lat1, lon1 = origin
+    lat2, lon2 = destination
+    radius = 6371 # km
+
+    dlat = math.radians(lat2-lat1)
+    dlon = math.radians(lon2-lon1)
+    a = math.sin(dlat/2) * math.sin(dlat/2) + math.cos(math.radians(lat1)) \
+        * math.cos(math.radians(lat2)) * math.sin(dlon/2) * math.sin(dlon/2)
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    d = radius * c
+    return d # km
+
+def calSimilarity(otfeats, feats):
+    dis_threshold = 100
+    ratio = 0.5
+    tot = otfeats.shape[0]
+    for feat in feats:
+        dis = np.linalg.norm(otfeats-feat, ord=2, axis=1)
+        if sum(dis <= dis_threshold) / tot >= ratio:
+            return True
+    return False
 
 
 if __name__ == "__main__":
