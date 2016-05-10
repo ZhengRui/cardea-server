@@ -97,22 +97,21 @@ class RequestHandler(SS.BaseRequestHandler):
                 # find nearest face for each yes or no gesture
                 gesture_user = {1:[], 2:[]}
 
-                for bboxs, confs, cls_ind in self.res['hand_res']: # ?????
+                for bboxs, confs, cls_ind in self.res['hand_res']:
                     if cls_ind != 0: # not for natural hand
-                        hand_center = (bboxs[0] + bboxs[2]/2, bboxs[1] + bboxs[3]/2) # ?????
+                        hand_center = (bboxs[0] + bboxs[2]/2, bboxs[1] + bboxs[3]/2)
                         dis_min = 1000
                         user_dis_min = ''
                         for bbs_filt, labels, _, _ in self.res['face_res']:
-                            face_center = # ?????
+                            face_center = 0
                             dis = math.hypot(hand_center, face_center)
-                            if dis < dis_min: 
+                            if dis < dis_min:
                                 dis_min = dis
                                 user_dis_min = uid2name[labels]
                         gesture_user[cls_ind].append(user_dis_min)
 
 
                 for user in self.res['profiles']:
-                    
                     # 'yes' gesture is used
                     if self.res['profiles'][user][0][0] == 1 and user in gesture_user[1]:
                         print "Case 2: gesture 'yes', not blurring"
@@ -123,24 +122,24 @@ class RequestHandler(SS.BaseRequestHandler):
                         self.res['face_to_blur'].append(self.res['profiles'][user_dis_min][4])
 
                     # no hand gesture is triggered
-                    else:  
+                    else:
                         # location filter
                         distance = calDistance([lat, lon], (self.res['profiles'][user][1]))
                         if distance > 2.0:
                             print "Case 3: out of distance, not blurring"
 
-                        else: 
+                        else:
                             # compare others features in profiles with those in the picture
                             for _, _, _, otfeature in self.res['face_res']:
-                                similarity = computeFeat(otfeature, self.res['profiles'][user][5]) # ?????
+                                similarity = computeFeat(otfeature, self.res['profiles'][user][5])
                                 if similarity > SIM_THRESHOLD:
                                     print "Case 4: otfeature matched, blurring"
                                     self.res['face_to_blur'].append(self.res['profiles'][user][4])
                                 else: # no matched otfeatures
-                                    # send back scene lists 
-                                    print 'Case 5: sending scene lists back' 
+                                    # send back scene lists
+                                    print 'Case 5: sending scene lists back'
                                     self.res['face_to_check'].append(self.res['profiles'][user][4])
-                                    self.res['face_to_check'].append(self.res['profiles'][user][2]) 
+                                    self.res['face_to_check'].append(self.res['profiles'][user][2])
 
 
             # send message back to the client
@@ -250,8 +249,8 @@ def resMailMan(res_q, jobtype): # jobtype is 'hand_res' or 'face_res'
                 for bbs_filt, labels, probs, feats in res:
                     if probs > 0.55:
                         username = uid2name[labels]
-                        client.res['profiles'][username] = pref_db.ix[username].value.tolist() 
-                        client.res['profiles'][username][4] = bbs_filt 
+                        client.res['profiles'][username] = pref_db.ix[username].value.tolist()
+                        client.res['profiles'][username][4] = bbs_filt
 
 
             client.res[jobtype + '_evt'].set()
