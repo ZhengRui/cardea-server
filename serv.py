@@ -189,6 +189,7 @@ class RequestHandler(SS.BaseRequestHandler):
             #  print pref_misc, pref_myfeat.shape, pref_otfeat.shape
             pref_wrt_q.put((self.name, pref_misc, pref_myfeat, pref_otfeat))
             self.res['pref_wrt_evt'].wait()
+            self.request.send("Preference Updated.")
 
 
     def finish(self):
