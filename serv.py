@@ -119,7 +119,7 @@ class RequestHandler(SS.BaseRequestHandler):
                     # 'yes' gesture is used
                     if profile[0][0] == 1 and user in gesture_user[2]:
                         print "Case 2: gesture 'yes', not blurring"
-                        self.rs['c2'].append(profile[4])
+                        self.res['c2'].append(profile[4])
 
                     # 'no' gesture is used
                     elif profile[0][1] == 1 and user in gesture_user[3]:
@@ -153,64 +153,64 @@ class RequestHandler(SS.BaseRequestHandler):
             length_face = ''
             length_hand = ''
             real_data = ''
-            data_to_send = '' 
+            data_to_send = ''
 
             # pack all faces
-            # 4i (bbs) | 22s (username) | 2s (case) | 10s (scenes) | 1i (policy)
-            recs, _, _, _ = self.res['face_res']
+            # 4i (bbs) | 28s (username) | 2s (case) | 10s (scenes) | 1i (policy)
+            recs, pps, _, _ = self.res['face_res']
 
             # pack unregistered users
-            registered_users = []
+            registered_bbss = []
             for user, profile in self.res['profiles'].iteritems():
-                registered_users.append(profile[4])
-            for face_idx in range(len(recs)):
-                if face_idx not in registered_users:
-                    bbs = transRec(recs[face_idx])
-                    data = struct.pack('4i22s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], 'Unknown', 'c0', '', -1) 
+                registered_bbss.append(profile[4])
+            for bbs_idx in range(len(recs)):
+                if bbs_idx not in registered_bbss:
+                    bbs = transRec(recs[bbs_idx])
+                    data = struct.pack('4i28s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], 'Unknown', 'c0', '', -1)
 
-                    data_to_send += data
+                    real_data += data
 
             # pack c1 users: gesture 'no', blurring
-            for face_idx in self.res['c1']:
-                bbs = transRec(recs[face_idx])
-                username = uid2name[face_idx]
+            for bbs_idx in self.res['c1']:
+                bbs = transRec(recs[bbs_idx])
+                username = uid2name[pps[bbs_idx]]
                 policy = self.res['profiles'][username][3]
-                data = struct.pack('4i22s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], username, 'c1', policy)
-                
+                data = struct.pack('4i28s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], username, 'c1', '', policy)
+
                 real_data += data
 
             # pack c2 users: gesture 'yes', not blurring
-            for face_idx in self.res['c2']:
-                bbs = transRec(recs[face_idx])
-                data = struct.pack('4i22s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], uid2name[face_idx], 'c2', '', -1)
+            for bbs_idx in self.res['c2']:
+                bbs = transRec(recs[bbs_idx])
+                data = struct.pack('4i28s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], uid2name[pps[bbs_idx]], 'c2', '', -1)
 
                 real_data += data
 
             # pack c3 users: out of distance, not blurring
-            for face_idx in self.res['c3']:
-                bbs = transRec(recs[face_idx])
-                data = struct.pack('4i22s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], uid2name[face_idx], 'c3', '', -1)
+            for bbs_idx in self.res['c3']:
+                bbs = transRec(recs[bbs_idx])
+                data = struct.pack('4i28s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], uid2name[pps[bbs_idx]], 'c3', '', -1)
 
                 real_data += data
 
             # pack c4 users: otfeature matched, blurring
-            for face_idx in self.res['c4']:
-                bbs = transRec(recs[face_idx])
-                username = uid2name[face_idx]
+            for bbs_idx in self.res['c4']:
+                bbs = transRec(recs[bbs_idx])
+                username = uid2name[pps[bbs_idx]]
                 policy = self.res['profiles'][username][3]
-                data = struct.pack('4i22s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], username, 'c4', '', policy)
+                data = struct.pack('4i28s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], username, 'c4', '', policy)
 
                 real_data += data
 
             # pack c5 users: sending scene lists back
-            for face_idx in self.res['c3']:
-                bbs = transRec(recs[face_idx])
-                username = uid2name[face_idx]
+            for bbs_idx in self.res['c5']:
+                bbs = transRec(recs[bbs_idx])
+                username = uid2name[pps[bbs_idx]]
                 policy = self.res['profiles'][username][3]
-                scene_list = '0000000000'
+                scene_list = ['0'] * 10
                 for scene in self.res['profiles'][username][2]:
                     scene_list[scene] = '1'
-                data = struct.pack('4i22s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], username, 'c5', scene_list, policy)
+                data = struct.pack('4i28s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], username, 'c5', ''.join(scene_list), policy)
 
                 real_data += data
 
@@ -218,9 +218,9 @@ class RequestHandler(SS.BaseRequestHandler):
             length_face = struct.pack('1i', size_face)
 
             # pack all hands
-            # 4i (rectangles) | 1i (hand class)
-            for x0, y0, x1, y1, _, hand_cls in self.res['hand_res']:
-                data = struct.pack('5i', int(x0), int(y0), int(x1), int(y1), int(hand_class))
+            # 4i (rectangles) | 1i (hand class) | 1f (score)
+            for x0, y0, x1, y1, scr, hand_cls in self.res['hand_res']:
+                data = struct.pack('5i1f', int(x0), int(y0), int(x1), int(y1), int(hand_cls), scr)
                 real_data += data
 
             size_hand = len(real_data) - size_face
@@ -271,6 +271,7 @@ class RequestHandler(SS.BaseRequestHandler):
             #  print pref_misc, pref_myfeat.shape, pref_otfeat.shape
             pref_wrt_q.put((self.name, pref_misc, pref_myfeat, pref_otfeat))
             self.res['pref_wrt_evt'].wait()
+            self.request.send("Preference Updated.")
 
 
     def finish(self):
@@ -327,7 +328,7 @@ def resMailMan(res_q, jobtype): # jobtype is 'hand_res' or 'face_res'
             client = skt_clients_map[cli_name]
             client.res[jobtype] = res
 
-            # retrieve registered users' profiles, rewrite myfeature with uid
+            # retrieve registered users' profiles, rewrite myfeature with bbx index
             if jobtype == 'face_res':
                 recs, pps, scrs, feats = res
                 for i in range(len(recs)):
@@ -335,6 +336,7 @@ def resMailMan(res_q, jobtype): # jobtype is 'hand_res' or 'face_res'
                         username = uid2name[pps[i]]
                         client.res['profiles'][username] = pref_db.ix[username].values.tolist()
                         client.res['profiles'][username][4] = i
+
 
 
             client.res[jobtype + '_evt'].set()
@@ -446,7 +448,7 @@ def updateFaceClassifier(interval):
                 num_tot_feat += 1 if feat.shape[0] else 0
 
             svm_reload = False
-            if True or num_new_feat and num_tot_feat >= 2:  # if in last interval there are users uploaded new features and svm is trainable
+            if num_new_feat and num_tot_feat >= 2:  # if in last interval there are users uploaded new features and svm is trainable
                 mdl_svm_fresh, uid_to_name = svmTrain(pref_db_tot)
                 svm_save_model('./profiles/svm_model.bin', mdl_svm_fresh)
                 with open('./profiles/uid2name.pkl', 'wb') as uid2name_fd:
@@ -491,11 +493,11 @@ def calSimilarity(otfeats, feats):
     return False
 
 def transRec(dlib_rec):
-    bbs_x0 = int(dlib_rec.left)
-    bbs_y0 = int(dlib_rec.top)
-    bbs_x1 = int(dlib_rec.right)
-    bbs_y1 = int(dlib_rec.bottom)
-    return bbs_x0, bbs_y0, bbs_x1, bbs_y1 
+    bbs_x0 = dlib_rec.left()
+    bbs_y0 = dlib_rec.top()
+    bbs_x1 = dlib_rec.right()
+    bbs_y1 = dlib_rec.bottom()
+    return bbs_x0, bbs_y0, bbs_x1, bbs_y1
 
 if __name__ == "__main__":
 
