@@ -84,7 +84,7 @@ class RequestHandler(SS.BaseRequestHandler):
 
             self.res['hand_res_evt'].wait()
             self.res['face_res_evt'].wait()
-            print "hand result : ", self.res['hand_res'][:, -2:], "\nface result : ", self.res['face_res'][1]
+            print "hand result : ", self.res['hand_res'][:, -2:], "\nface result : ", self.res['face_res'][1:3]
 
 
             # Case 0: no registered user, no operation
@@ -485,11 +485,14 @@ def calSimilarity(otfeats, feats):
     dis_threshold = 100
     ratio = 0.5
     tot = otfeats.shape[0]
-    for feat in feats:
-        dis = np.linalg.norm(otfeats-feat, ord=2, axis=1)
-        if sum(dis <= dis_threshold) / tot >= ratio:
-            return True
-    return False
+    if not tot:
+        return False
+    else:
+        for feat in feats:
+            dis = np.linalg.norm(otfeats-feat, ord=2, axis=1)
+            if sum(dis <= dis_threshold) / tot >= ratio:
+                return True
+        return False
 
 def transRec(dlib_rec):
     bbs_x0 = dlib_rec.left()
