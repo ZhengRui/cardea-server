@@ -51,7 +51,7 @@ class gestDetModel:
         pred_boxes = bbox_transform_inv(boxes, box_deltas)
         pred_boxes = clip_boxes(pred_boxes, im_shape)
 
-        handbboxs = np.zeros(0)
+        handbboxs = np.zeros((0, 6))
         for cls_ind, _ in enumerate(self.CLASSES[1:]):
             cls_ind += 1
             cls_boxes = pred_boxes[:, 4*cls_ind:4*(cls_ind+1)]

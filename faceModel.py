@@ -101,8 +101,8 @@ class faceRecModel:
                 if reload_val.value:
                     self.classify = svm_load_model(mdl_update_pth)
                     reload_val.value = 0
-                cli_name, data_buffer, mode = inp_q.get(timeout=2)
 
+                cli_name, data_buffer, mode = inp_q.get(timeout=2)
                 bbs_filt, labels, probs = [], [], []
 
                 if mode:    # 1 is strong mode
