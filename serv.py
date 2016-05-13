@@ -44,8 +44,8 @@ class RequestHandler(SS.BaseRequestHandler):
 
         if not header[0]:   # frame prediction message
             self.res={'hand_res':None, 'hand_res_evt':Event(), 'face_res':None, 'face_res_evt':Event(),
-                        'profiles':{}, 'c1':[], 'c2':[], 'c3':[], 'c4':[], 'c5':[]}
-            # in self.res['profiles'][username] = [gesture, location, scene, policy, uid, otfeatures]
+                        'bbsprofiles':{}, 'c1':[], 'c2':[], 'c3':[], 'c4':[], 'c5':[]}
+            # in self.res['bbsprofiles'][i] = [gesture, location, scene, policy, username, otfeatures]
 
             lat, lon = struct.unpack('<2d', self.request.recv(16))
             #  print lat, lon
@@ -116,7 +116,8 @@ class RequestHandler(SS.BaseRequestHandler):
             # Case 5: sending scene lists back
 
             # is any registered user?
-            if len(self.res['profiles']) == 0:
+
+            if len(self.res['bbsprofiles']) == 0:
                 print "Case 0: no registered user, no operation"
 
             else: # for registered users
@@ -134,19 +135,18 @@ class RequestHandler(SS.BaseRequestHandler):
                     if hand_cls != 1: # not for natural hand
                         hand_center = np.array([(x0 + x1) / 2, (y0 + y1) / 2])
                         dis_centers = np.linalg.norm(face_centers-hand_center, ord=2, axis=1)
-                        user_dis_min = uid2name[pps[np.argmin(dis_centers)]]
-                        gesture_user[hand_cls].append(user_dis_min)
+                        gesture_user[hand_cls].append(np.argmin(dis_centers))
 
-                for user, profile in self.res['profiles'].iteritems():
+                for i, profile in self.res['bbsprofiles'].iteritems():
                     # 'yes' gesture is used
-                    if profile[0][0] == 1 and user in gesture_user[2]:
+                    if profile[0][0] == 1 and i in gesture_user[2]:
                         print "Case 2: gesture 'yes', not blurring"
-                        self.res['c2'].append(profile[4])
+                        self.res['c2'].append(i)
 
                     # 'no' gesture is used
-                    elif profile[0][1] == 1 and user in gesture_user[3]:
+                    elif profile[0][1] == 1 and i in gesture_user[3]:
                         print "Case 1: gesture 'no', blurring"
-                        self.res['c1'].append(profile[4])
+                        self.res['c1'].append(i)
 
                     # no hand gesture is triggered
                     else:
@@ -154,7 +154,7 @@ class RequestHandler(SS.BaseRequestHandler):
                         distance = calDistance((lat, lon), profile[1])
                         if distance > 2.0:
                             print "Case 3: out of distance, not blurring"
-                            self.res['c3'].append(profile[4])
+                            self.res['c3'].append(i)
 
                         else:
                             # compare others features in profiles with those in the picture
@@ -162,11 +162,11 @@ class RequestHandler(SS.BaseRequestHandler):
                             should_blur = calSimilarity(profile[5], feats)
                             if should_blur:
                                 print "Case 4: otfeature matched, blurring"
-                                self.res['c4'].append(profile[4])
+                                self.res['c4'].append(i)
                             else: # no matched otfeatures
                                 # send back scene lists
                                 print 'Case 5: sending scene lists back'
-                                self.res['c5'].append(profile[4])
+                                self.res['c5'].append(i)
 
 
             # send message back to the client
@@ -182,9 +182,7 @@ class RequestHandler(SS.BaseRequestHandler):
             recs, pps, _, _ = self.res['face_res']
 
             # pack unregistered users
-            registered_bbss = []
-            for user, profile in self.res['profiles'].iteritems():
-                registered_bbss.append(profile[4])
+            registered_bbss = self.res['bbsprofiles'].keys()
             for bbs_idx in range(len(recs)):
                 if bbs_idx not in registered_bbss:
                     bbs = transRec(recs[bbs_idx])
@@ -195,45 +193,38 @@ class RequestHandler(SS.BaseRequestHandler):
             # pack c1 users: gesture 'no', blurring
             for bbs_idx in self.res['c1']:
                 bbs = transRec(recs[bbs_idx])
-                username = uid2name[pps[bbs_idx]]
-                policy = self.res['profiles'][username][3]
-                data = struct.pack('4i28s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], fillString(username, 28), 'c1', '', policy)
-
+                policy = self.res['bbsprofiles'][bbs_idx][3]
+                data = struct.pack('4i28s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], fillString(uid2name[pps[bbs_idx]], 28), 'c1', '', policy)
                 real_data += data
 
             # pack c2 users: gesture 'yes', not blurring
             for bbs_idx in self.res['c2']:
                 bbs = transRec(recs[bbs_idx])
                 data = struct.pack('4i28s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], fillString(uid2name[pps[bbs_idx]], 28), 'c2', '', -1)
-
                 real_data += data
 
             # pack c3 users: out of distance, not blurring
             for bbs_idx in self.res['c3']:
                 bbs = transRec(recs[bbs_idx])
                 data = struct.pack('4i28s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], fillString(uid2name[pps[bbs_idx]], 28), 'c3', '', -1)
-
                 real_data += data
 
             # pack c4 users: otfeature matched, blurring
             for bbs_idx in self.res['c4']:
                 bbs = transRec(recs[bbs_idx])
-                username = uid2name[pps[bbs_idx]]
-                policy = self.res['profiles'][username][3]
-                data = struct.pack('4i28s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], fillString(username, 28), 'c4', '', policy)
-
+                policy = self.res['bbsprofiles'][bbs_idx][3]
+                data = struct.pack('4i28s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], fillString(uid2name[pps[bbs_idx]], 28), 'c4', '', policy)
                 real_data += data
 
             # pack c5 users: sending scene lists back
             for bbs_idx in self.res['c5']:
                 bbs = transRec(recs[bbs_idx])
-                username = uid2name[pps[bbs_idx]]
-                policy = self.res['profiles'][username][3]
+                policy = self.res['bbsprofiles'][bbs_idx][3]
                 scene_list = ['0'] * 10
-                for scene in self.res['profiles'][username][2]:
-                    scene_list[scene] = '1'
-                data = struct.pack('4i28s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], fillString(username, 28), 'c5', ''.join(scene_list), policy)
-
+                for scene in self.res['bbsprofiles'][bbs_idx][2]:
+                    if scene >= 0:
+                        scene_list[scene] = '1'
+                data = struct.pack('4i28s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], fillString(uid2name[pps[bbs_idx]], 28), 'c5', ''.join(scene_list), policy)
                 real_data += data
 
             size_face = len(real_data)
@@ -260,8 +251,8 @@ class RequestHandler(SS.BaseRequestHandler):
             recs, pps, scrs, _ = self.res['face_res']
             for i in range(len(recs)):
                 #cv2.rectangle(im_show, (recs[i].left(), recs[i].top()), (recs[i].right(), recs[i].bottom()), (0,255,0), 2)
-                #cv2.putText(im_show, '{}'.format(uid2name[pps[i]] if max(scrs[i]) > 0.55 else '****'), (recs[i].left(), recs[i].top()-10), cv2.FONT_HERSHEY_DUPLEX, 0.8, (0,255,0), 2)
-                print uid2name[pps[i]] if max(scrs[i]) > 0.5 else 'unknown person'
+                #cv2.putText(im_show, '{}'.format(uid2name[pps[i]] if max(scrs[i]) > 0.3 else '****'), (recs[i].left(), recs[i].top()-10), cv2.FONT_HERSHEY_DUPLEX, 0.8, (0,255,0), 2)
+                print uid2name[pps[i]] if max(scrs[i]) > 0.3 else 'unknown person'
             #im_show = cv2.resize(im_show, (int(im_show.shape[1]/2.), int(im_show.shape[0]/2.)), interpolation=cv2.INTER_AREA)
             #cv2.imshow("ResultPreview", im_show)
             #cv2.waitKey(0)
@@ -354,10 +345,10 @@ def resMailMan(res_q, jobtype): # jobtype is 'hand_res' or 'face_res'
             if jobtype == 'face_res':
                 recs, pps, scrs, feats = res
                 for i in range(len(recs)):
-                    if max(scrs[i]) > 0.5:
+                    if max(scrs[i]) > 0.3:
                         username = uid2name[pps[i]]
-                        client.res['profiles'][username] = pref_db.ix[username].values.tolist()
-                        client.res['profiles'][username][4] = i
+                        client.res['bbsprofiles'][i] = pref_db.ix[username].values.tolist()
+                        client.res['bbsprofiles'][i][4] = username
 
             client.res[jobtype + '_evt'].set()
             #  print cli_name, " ", jobtype, " result mailed"
