@@ -13,9 +13,9 @@
     + automatically retrainning svm after new features saved
     + automatically reload new svm model
     + retrieve preference and action making
+    + strong / weak privacy mode
 
 * ToDo:
 
-    + strong / weak privacy mode
     + concurrency test (worker num, image size, task schedule)
 

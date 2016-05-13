@@ -51,6 +51,7 @@ class RequestHandler(SS.BaseRequestHandler):
             #  print lat, lon
 
             size = header[5]
+            mode = header[6]
             size_recv = 0
             frm_buffer = ''
 
@@ -64,6 +65,27 @@ class RequestHandler(SS.BaseRequestHandler):
                     size_recv += len(chunk)
                     #  print "size, size_recv", size, size_recv
 
+            if mode:
+                size_extra = header[7]
+                size_recv = 0
+                extra_buffer = ''
+                while size_recv < size_extra:
+                    chunk = self.request.recv(size_extra - size_recv)
+                    if not chunk:
+                        print "socket receiving error"
+                        return None
+                    else:
+                        extra_buffer += chunk
+                        size_recv += len(chunk)
+
+                facenum = size_extra / (4 * 260)
+                facebbxs = np.fromstring(extra_buffer[:16*facenum], dtype=np.int32)
+                facefeats = np.fromstring(extra_buffer[16*facenum:], dtype=np.float32)
+                if facenum:
+                    facebbxs = facebbxs.reshape((facenum, -1))
+                    facefeats = facefeats.reshape((facenum, -1))
+
+
             print "Frame received"
 
             #  frm_raw_q.put((header[1], header[2], frm_buffer))
@@ -75,15 +97,15 @@ class RequestHandler(SS.BaseRequestHandler):
 
             hand_inp_q.put((self.name, frm_buffer))
 
-            #  if weak mode
-            face_inp_q.put((self.name, frm_buffer, 0))
 
-            #  if strong mode
-            #
+            if not mode:  #  if weak mode
+                face_inp_q.put((self.name, frm_buffer, 0))
+            else:  #  if strong mode
+                face_inp_q.put((self.name, (facebbxs, facefeats), 1))
 
             self.res['hand_res_evt'].wait()
             self.res['face_res_evt'].wait()
-            # print "hand result : ", self.res['hand_res'], "\nface result : ", self.res['face_res']
+            print "hand result : ", self.res['hand_res'][:, -2:], "\nface result : ", self.res['face_res'][1], np.max(self.res['face_res'][2], 1) if len(self.res['face_res'][2]) else []
 
 
             # Case 0: no registered user, no operation
@@ -166,7 +188,7 @@ class RequestHandler(SS.BaseRequestHandler):
             for bbs_idx in range(len(recs)):
                 if bbs_idx not in registered_bbss:
                     bbs = transRec(recs[bbs_idx])
-                    data = struct.pack('4i28s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], 'Unknown', 'c0', '', -1)
+                    data = struct.pack('4i28s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], fillString('Unknown', 28), 'c0', '', -1)
 
                     real_data += data
 
@@ -175,21 +197,21 @@ class RequestHandler(SS.BaseRequestHandler):
                 bbs = transRec(recs[bbs_idx])
                 username = uid2name[pps[bbs_idx]]
                 policy = self.res['profiles'][username][3]
-                data = struct.pack('4i28s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], username, 'c1', '', policy)
+                data = struct.pack('4i28s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], fillString(username, 28), 'c1', '', policy)
 
                 real_data += data
 
             # pack c2 users: gesture 'yes', not blurring
             for bbs_idx in self.res['c2']:
                 bbs = transRec(recs[bbs_idx])
-                data = struct.pack('4i28s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], uid2name[pps[bbs_idx]], 'c2', '', -1)
+                data = struct.pack('4i28s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], fillString(uid2name[pps[bbs_idx]], 28), 'c2', '', -1)
 
                 real_data += data
 
             # pack c3 users: out of distance, not blurring
             for bbs_idx in self.res['c3']:
                 bbs = transRec(recs[bbs_idx])
-                data = struct.pack('4i28s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], uid2name[pps[bbs_idx]], 'c3', '', -1)
+                data = struct.pack('4i28s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], fillString(uid2name[pps[bbs_idx]], 28), 'c3', '', -1)
 
                 real_data += data
 
@@ -198,7 +220,7 @@ class RequestHandler(SS.BaseRequestHandler):
                 bbs = transRec(recs[bbs_idx])
                 username = uid2name[pps[bbs_idx]]
                 policy = self.res['profiles'][username][3]
-                data = struct.pack('4i28s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], username, 'c4', '', policy)
+                data = struct.pack('4i28s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], fillString(username, 28), 'c4', '', policy)
 
                 real_data += data
 
@@ -210,7 +232,7 @@ class RequestHandler(SS.BaseRequestHandler):
                 scene_list = ['0'] * 10
                 for scene in self.res['profiles'][username][2]:
                     scene_list[scene] = '1'
-                data = struct.pack('4i28s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], username, 'c5', ''.join(scene_list), policy)
+                data = struct.pack('4i28s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], fillString(username, 28), 'c5', ''.join(scene_list), policy)
 
                 real_data += data
 
@@ -227,7 +249,7 @@ class RequestHandler(SS.BaseRequestHandler):
             length_hand = struct.pack('1i', size_hand)
 
             data_to_send = length_face + length_hand + real_data
-
+            self.request.send(data_to_send)
 
             #cv2.namedWindow("ResultPreview", cv2.CV_WINDOW_AUTOSIZE)
             #nparr = np.fromstring(frm_buffer, dtype=np.uint8)
@@ -336,8 +358,6 @@ def resMailMan(res_q, jobtype): # jobtype is 'hand_res' or 'face_res'
                         username = uid2name[pps[i]]
                         client.res['profiles'][username] = pref_db.ix[username].values.tolist()
                         client.res['profiles'][username][4] = i
-
-
 
             client.res[jobtype + '_evt'].set()
             #  print cli_name, " ", jobtype, " result mailed"
@@ -486,11 +506,14 @@ def calSimilarity(otfeats, feats):
     dis_threshold = 100
     ratio = 0.5
     tot = otfeats.shape[0]
-    for feat in feats:
-        dis = np.linalg.norm(otfeats-feat, ord=2, axis=1)
-        if sum(dis <= dis_threshold) / tot >= ratio:
-            return True
-    return False
+    if not tot:
+        return False
+    else:
+        for feat in feats:
+            dis = np.linalg.norm(otfeats-feat, ord=2, axis=1)
+            if sum(dis <= dis_threshold) / tot >= ratio:
+                return True
+        return False
 
 def transRec(dlib_rec):
     bbs_x0 = dlib_rec.left()
@@ -498,6 +521,10 @@ def transRec(dlib_rec):
     bbs_x1 = dlib_rec.right()
     bbs_y1 = dlib_rec.bottom()
     return bbs_x0, bbs_y0, bbs_x1, bbs_y1
+
+def fillString(s, l):
+    ext = l - len(s)
+    return s[:l] if ext < 0 else (s + ' ' * ext)
 
 if __name__ == "__main__":
 
