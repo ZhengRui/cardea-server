@@ -106,7 +106,11 @@ class faceRecModel:
                 bbs_filt, labels, probs = [], [], []
 
                 if mode:    # 1 is strong mode
-                    feats = data_buffer
+                    bbs_filt_np, feats = data_buffer
+                    bbs_filt_np = bbs_filt_np.astype(np.int64)
+                    for bbs_np in bbs_filt_np:
+                        bbs_filt.append(dlib.rectangle(bbs_np[0], bbs_np[1], bbs_np[2], bbs_np[3]))
+
                 else:
                     nparr = np.fromstring(data_buffer, dtype=np.uint8)
                     img_np = cv2.imdecode(nparr, cv2.CV_LOAD_IMAGE_COLOR)

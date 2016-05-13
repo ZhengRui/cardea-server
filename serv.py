@@ -65,6 +65,27 @@ class RequestHandler(SS.BaseRequestHandler):
                     size_recv += len(chunk)
                     #  print "size, size_recv", size, size_recv
 
+            if mode:
+                size_extra = header[7]
+                size_recv = 0
+                extra_buffer = ''
+                while size_recv < size_extra:
+                    chunk = self.request.recv(size_extra - size_recv)
+                    if not chunk:
+                        print "socket receiving error"
+                        return None
+                    else:
+                        extra_buffer += chunk
+                        size_recv += len(chunk)
+
+                facenum = size_extra / (4 * 260)
+                facebbxs = np.fromstring(extra_buffer[:16*facenum], dtype=np.int32)
+                facefeats = np.fromstring(extra_buffer[16*facenum:], dtype=np.float32)
+                if facenum:
+                    facebbxs = facebbxs.reshape((facenum, -1))
+                    facefeats = facefeats.reshape((facenum, -1))
+
+
             print "Frame received"
 
             #  frm_raw_q.put((header[1], header[2], frm_buffer))
@@ -76,15 +97,15 @@ class RequestHandler(SS.BaseRequestHandler):
 
             hand_inp_q.put((self.name, frm_buffer))
 
-            #  if weak mode
-            face_inp_q.put((self.name, frm_buffer, 0))
 
-            #  if strong mode
-            #
+            if not mode:  #  if weak mode
+                face_inp_q.put((self.name, frm_buffer, 0))
+            else:  #  if strong mode
+                face_inp_q.put((self.name, (facebbxs, facefeats), 1))
 
             self.res['hand_res_evt'].wait()
             self.res['face_res_evt'].wait()
-            print "hand result : ", self.res['hand_res'][:, -2:], "\nface result : ", self.res['face_res'][1:3]
+            print "hand result : ", self.res['hand_res'][:, -2:], "\nface result : ", self.res['face_res'][1], np.max(self.res['face_res'][2], 1) if len(self.res['face_res'][2]) else []
 
 
             # Case 0: no registered user, no operation
