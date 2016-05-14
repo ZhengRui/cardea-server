@@ -284,7 +284,7 @@ class RequestHandler(SS.BaseRequestHandler):
             #  print pref_misc, pref_myfeat.shape, pref_otfeat.shape
             pref_wrt_q.put((self.name, pref_misc, pref_myfeat, pref_otfeat))
             self.res['pref_wrt_evt'].wait()
-            self.request.send("Preference Updated.")
+            self.request.send(struct.pack("?", True))
 
 
     def finish(self):
@@ -479,7 +479,7 @@ def updateFaceClassifier(interval):
             faceres_empty_evt.clear()
 
 def calDistance(origin, destination):
-    if not len(destination):
+    if not len(destination) or (origin[0] == 0 and origin[0] == 0):
         return 0
     lat1, lon1 = origin
     lat2, lon2 = destination
