@@ -1,2 +1,4 @@
 *.pyc
 profiles/
+testimgs/
+align/*.dat

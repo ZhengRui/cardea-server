@@ -300,8 +300,7 @@ def modelPrepare(model_class_name, params, tsk_queues):
        #  "syncedmem.cpp: error == cudaSuccess (3 vs. 0)"
     #  or
        #  "math_functions.cu:28: CUBLAS_STATUS_SUCCESS (14 vs. 0) CUBLAS_STATUS_INTERNAL_ERROR"
-    caffe.set_mode_gpu()
-    caffe.set_device(0)
+    caffe.set_mode_cpu()
     modelClass = getattr(sys.modules[__name__], model_class_name)
     model = modelClass(*params)
     model.serv(*tsk_queues)
@@ -474,7 +473,6 @@ def updateFaceClassifier(interval):
             if svm_reload:
                 uid2name = uid_to_name
                 svm_reload_1.value = 1
-                svm_reload_2.value = 1
             facemdl_continue_evt.set()
             faceres_empty_evt.clear()
 
@@ -543,19 +541,11 @@ if __name__ == "__main__":
     #  worker_preprocess_p = Process(target = preProcess, args = (frm_raw_q, (hand_inp_q, )))
 
     worker_hand_p1 = Process(target = modelPrepare, args = ('gestDetModel',
-    ("/home/zerry/Work/Libs/py-faster-rcnn/models/VGG16/faster_rcnn_end2end_handGesdet/test.prototxt", "/home/zerry/Work/Libs/py-faster-rcnn/output/faster_rcnn_end2end_handGesdet/trainval/vgg16_faster_rcnn_handGesdet_aug_fulldata_iter_50000.caffemodel", 0.4, 0.8, ('natural', 'yes', 'no')), (hand_inp_q, hand_res_q)))
-
-    worker_hand_p2 = Process(target = modelPrepare, args = ('gestDetModel',
-    ("/home/zerry/Work/Libs/py-faster-rcnn/models/VGG16/faster_rcnn_end2end_handGesdet/test.prototxt", "/home/zerry/Work/Libs/py-faster-rcnn/output/faster_rcnn_end2end_handGesdet/trainval/vgg16_faster_rcnn_handGesdet_aug_fulldata_iter_50000.caffemodel", 0.4, 0.8, ('natural', 'yes', 'no')), (hand_inp_q, hand_res_q)))
+    ("../modelzoo/hand/test.prototxt", "../modelzoo/hand/vgg16_faster_rcnn_handGesdet_aug_fulldata_iter_50000.caffemodel", 0.4, 0.8, ('natural', 'yes', 'no')), (hand_inp_q, hand_res_q)))
 
     svm_reload_1 = Value('i', 0)
     worker_face_p1 = Process(target = modelPrepare, args = ('faceRecModel',
-    ("/home/zerry/Work/Datasets/UST-Face/haarcascade_frontalface_alt.xml", "/home/zerry/Work/Datasets/UST-Face/align/shape_predictor_68_face_landmarks.dat", "/home/zerry/Work/Projects/facerecognition/faceMFM/proto/LightenedCNN_B_deploy.prototxt", "/home/zerry/Work/Projects/facerecognition/faceMFM/model/LightenedCNN_B.caffemodel", "eltwise_fc1", "./profiles/svm_model.bin"), (face_inp_q, face_res_q, facemdl_continue_evt, svm_reload_1, "./profiles/svm_model.bin")))
-
-    svm_reload_2 = Value('i', 0)
-    worker_face_p2 = Process(target = modelPrepare, args = ('faceRecModel',
-    ("/home/zerry/Work/Datasets/UST-Face/haarcascade_frontalface_alt.xml", "/home/zerry/Work/Datasets/UST-Face/align/shape_predictor_68_face_landmarks.dat", "/home/zerry/Work/Projects/facerecognition/faceMFM/proto/LightenedCNN_B_deploy.prototxt", "/home/zerry/Work/Projects/facerecognition/faceMFM/model/LightenedCNN_B.caffemodel", "eltwise_fc1", "./profiles/svm_model.bin"), (face_inp_q, face_res_q, facemdl_continue_evt, svm_reload_2, "./profiles/svm_model.bin")))
-
+    ("../modelzoo/face/haarcascade_frontalface_alt.xml", "./align/shape_predictor_68_face_landmarks.dat", "../modelzoo/face/LightenedCNN_B_deploy.prototxt", "../modelzoo/face/LightenedCNN_B.caffemodel", "eltwise_fc1", "./profiles/svm_model.bin"), (face_inp_q, face_res_q, facemdl_continue_evt, svm_reload_1, "./profiles/svm_model.bin")))
 
     dummycontinue = True
     worker_handres_mailman = DummyProcess(target = resMailMan, args = (hand_res_q, 'hand_res'))
@@ -565,9 +555,7 @@ if __name__ == "__main__":
 
     #  worker_preprocess_p.daemon = True
     worker_hand_p1.daemon = True
-    worker_hand_p2.daemon = True
     worker_face_p1.daemon = True
-    worker_face_p2.daemon = True
     worker_handres_mailman.daemon = True
     worker_faceres_mailman.daemon = True
     worker_pref_writeman.daemon = True
@@ -575,9 +563,7 @@ if __name__ == "__main__":
 
     #  worker_preprocess_p.start()
     worker_hand_p1.start()
-    #  worker_hand_p2.start()
     worker_face_p1.start()
-    worker_face_p2.start()
     worker_handres_mailman.start()
     worker_faceres_mailman.start()
     worker_pref_writeman.start()
@@ -617,14 +603,10 @@ if __name__ == "__main__":
         server.shutdown()
         server.server_close()
         worker_hand_p1.terminate()
-        #  worker_hand_p2.terminate()
         worker_face_p1.terminate()
-        worker_face_p2.terminate()
 
         worker_hand_p1.join()
-        #  worker_hand_p2.join()
         worker_face_p1.join()
-        worker_face_p2.join()
 
         dummycontinue = False
         worker_handres_mailman.join()
